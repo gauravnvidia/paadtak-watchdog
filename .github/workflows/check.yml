@@ -1,0 +1,56 @@
+name: Check Paad Tak stream
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only log what would happen; never open or close issues"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  issues: write
+  contents: write
+
+concurrency:
+  group: paadtak-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check the stream (up to 3 times, about 4 minutes apart)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: bash scripts/check.sh
+
+      - name: Keep-alive (stops GitHub pausing the schedule after 60 quiet days)
+        env:
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          last=$(git log -1 --format=%ct)
+          age_days=$(( ( $(date +%s) - last ) / 86400 ))
+          echo "Last commit is $age_days day(s) old."
+          if [ "$age_days" -lt 30 ]; then
+            echo "Under 30 days, no keep-alive commit needed."
+          elif [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: would commit a keep-alive update to last-check.txt."
+          else
+            echo "Keep-alive: $(date -u '+%Y-%m-%d')" > last-check.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add last-check.txt
+            git commit -m "Keep-alive: refresh last-check.txt"
+            git push origin HEAD:${{ github.event.repository.default_branch }}
+          fi
