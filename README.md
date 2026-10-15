@@ -3,7 +3,7 @@
 A tiny checker that tells the owner by email when the Paad Tak YouTube live stream is not on air.
 
 ## What it checks
-It opens https://www.youtube.com/@paadtak/live the way a normal desktop browser would. If the page says the channel is live right now, the stream is fine.
+It asks YouTube, the way a normal desktop browser would, whether the Paad Tak channel has a stream marked LIVE right now (it reads the channel's "Live" tab data, and also tries https://www.youtube.com/@paadtak/live). YouTube shows GitHub's servers a "confirm you're not a bot" page on the watch and live pages, so the Live tab data is what works there.
 
 ## How often
 Every 15 minutes, using a GitHub Actions schedule (GitHub may run it a few minutes late). If a check does not see the stream live, it looks again up to 3 times in total, about 4 minutes apart, so one short hiccup does not cause an alert.
