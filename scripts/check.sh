@@ -15,29 +15,51 @@ TMP="$(mktemp -d)"
 
 ist_now() { TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M IST'; }
 
-# Prints LIVE, OFF or UNKNOWN (plus a short reason) for one fetch.
-classify() {
+# Method 1 (works from GitHub's runners): YouTube's own channel "Live" tab data
+# (the same request the website makes). A running stream shows up as an item with
+# "liveBadgeText":"LIVE". Prints LIVE, OFF or UNKNOWN plus a short reason.
+classify_api() {
+  local out="$TMP/api.json" code
+  code=$(curl -sS --max-time 30 --connect-timeout 10 -A "$UA" -H "Accept-Language: en" \
+    -H "Content-Type: application/json" \
+    -d "{\"context\":{\"client\":{\"clientName\":\"WEB\",\"clientVersion\":\"2.20260101.00.00\",\"hl\":\"en\",\"gl\":\"US\"}},\"browseId\":\"$CHANNEL_ID\",\"params\":\"EgdzdHJlYW1z8gYECgJ6AA%3D%3D\"}" \
+    -o "$out" -w '%{http_code}' "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false" 2>"$TMP/curl.err") || {
+    echo "UNKNOWN (api curl error: $(tr -d '\n' <"$TMP/curl.err" | cut -c1-100))"; return; }
+  if [ "$code" != "200" ]; then echo "UNKNOWN (api HTTP $code)"; return; fi
+  if grep -q '"liveBadgeText":"LIVE"' "$out"; then echo "LIVE"; return; fi
+  # OFF only if we clearly got this channel's streams tab back, with no live item.
+  if grep -q '"value":"channel.streams"' "$out" && grep -q "$CHANNEL_ID" "$out" && grep -q 'richGridRenderer' "$out"; then
+    echo "OFF"; return
+  fi
+  echo "UNKNOWN (api answered but not the channel streams tab, $(wc -c <"$out" | tr -d ' ') bytes)"
+}
+
+# Method 2: the public live page. Works from a home network, but YouTube usually shows
+# GitHub's runners a "Sign in to confirm you're not a bot" page here, so it is only
+# used as an extra way to see LIVE (and to veto OFF if it says LIVE).
+classify_page() {
   local body="$TMP/page.html" code
   code=$(curl -sS -L --max-time 30 --connect-timeout 10 \
     -A "$UA" -H "Accept-Language: en" \
     -o "$body" -w '%{http_code}' "$LIVE_URL" 2>"$TMP/curl.err") || {
-    echo "UNKNOWN (curl error: $(tr -d '\n' <"$TMP/curl.err" | cut -c1-100))"; return; }
-  if [ "$code" != "200" ]; then echo "UNKNOWN (HTTP $code)"; return; fi
-  local size; size=$(wc -c <"$body" | tr -d ' ')
-  if [ "$size" -lt 1000 ]; then echo "UNKNOWN (tiny body, $size bytes)"; return; fi
-  # LIVE: YouTube marks a running stream with isLiveNow:true in the page data.
+    echo "UNKNOWN (page curl error)"; return; }
+  if [ "$code" != "200" ]; then echo "UNKNOWN (page HTTP $code)"; return; fi
   if grep -q '"isLiveNow":true' "$body"; then echo "LIVE"; return; fi
-  # OFF: a normal YouTube page with real page data (ytInitialData), recognisably
-  # the Paad Tak channel (or a watch page that says it is not live now), no isLiveNow:true.
-  # Consent / bot-check pages have none of these markers, so they stay UNKNOWN.
-  if grep -q 'ytInitialData' "$body" && {
-       grep -q 'channelMetadataRenderer' "$body" ||
-       grep -q '"isLiveNow":false' "$body" ||
-       grep -q "rel=\"canonical\" href=\"https://www.youtube.com/channel/$CHANNEL_ID\"" "$body" ||
-       grep -q 'rel="canonical" href="https://www.youtube.com/@paadtak"' "$body"; }; then
-    echo "OFF"; return
-  fi
-  echo "UNKNOWN (page loaded but no YouTube channel/live markers, $size bytes)"
+  if grep -q 'channelMetadataRenderer' "$body" || grep -q '"isLiveNow":false' "$body"; then echo "OFF"; return; fi
+  if grep -q 'not a bot' "$body"; then echo "UNKNOWN (page: bot check)"; return; fi
+  echo "UNKNOWN (page: no markers)"
+}
+
+# Combines both. LIVE if either says LIVE. OFF only if the API clearly says OFF and
+# the page did not say LIVE. Anything else is UNKNOWN.
+classify() {
+  local api page
+  api="$(classify_api)"
+  if [ "${api%% *}" = "LIVE" ]; then echo "LIVE [api: LIVE]"; return; fi
+  page="$(classify_page)"
+  if [ "${page%% *}" = "LIVE" ]; then echo "LIVE [page: LIVE, api: $api]"; return; fi
+  if [ "${api%% *}" = "OFF" ]; then echo "OFF [api: OFF, page: $page]"; return; fi
+  echo "UNKNOWN [api: $api, page: $page]"
 }
 
 results=()
