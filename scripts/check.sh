@@ -5,8 +5,8 @@
 #      CHECKS (default 3), GAP_SECONDS (default 240)
 set -u
 
-LIVE_URL="${LIVE_URL:-https://www.youtube.com/@paadtak/live}"
-CHANNEL_ID="${CHANNEL_ID:-UCS40zhxggcmiYmJFtAmoHaw}"
+LIVE_URL="${LIVE_URL:-https://www.youtube.com/@paadtaklive/live}"
+CHANNEL_ID="${CHANNEL_ID:-UC_6CWDXxng3q7fuojms8Vsg}" # @paadtaklive since 2026-10-20 (@paadtak now belongs to another project)
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 CHECKS="${CHECKS:-3}"
 GAP_SECONDS="${GAP_SECONDS:-240}"
